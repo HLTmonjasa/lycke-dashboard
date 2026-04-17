@@ -1,1 +1,742 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lycke EPIC — Jira Dashboard</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet" />
+  <style>
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: linear-gradient(135deg, #f9fafb 0%, #f5f3ff 100%); }
+    .gantt-bar { transition: all 0.2s; }
+    .gantt-bar:hover { filter: brightness(1.1); transform: scaleY(1.15); }
+    .gantt-row:hover { background: #f5f3ff !important; }
+    .view-btn-active { background: white; color: #6d28d9; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .epic-card { transition: box-shadow 0.2s; }
+    .epic-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+    .stat-card { transition: transform 0.15s; }
+    .stat-card:hover { transform: translateY(-2px); }
+    .subtask-toggle:hover { opacity: 0.85; }
+    .today-label { font-size: 10px; }
+    .progress-bar-animated { animation: progressGrow 0.8s ease-out forwards; }
+    @keyframes progressGrow { from { width: 0; } }
+    ::-webkit-scrollbar { height: 8px; }
+    ::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb { background: #c4b5fd; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useMemo } = React;
 
+    /* ─── SVG Icons ─── */
+    const Icons = {
+      Layers: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>,
+      ChevronDown: ({size=16}) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>,
+      ChevronRight: ({size=16}) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>,
+      Calendar: () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>,
+      List: () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>,
+      Eye: () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>,
+      EyeOff: () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>,
+      AlertCircle: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>,
+      BarChart: () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg>,
+      Circle: () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/></svg>,
+      ListTodo: () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="5" width="6" height="6" rx="1"/><path d="m3 17 2 2 4-4"/><line x1="13" y1="6" x2="21" y2="6"/><line x1="13" y1="12" x2="21" y2="12"/><line x1="13" y1="18" x2="21" y2="18"/></svg>,
+    };
+
+    /* ─── Jira Data (auto-updated 2026-04-17T00:00) ─── */
+    const jiraData = [
+      {
+        key: "HLT-1", summary: "Group Shared Services", type: "Epic", status: "To Do",
+        start: "2026-04-16", due: "2026-08-31",
+        children: [
+          {
+            key: "HLT-8", summary: "Group Shared Services 2026", type: "Main Story", status: "Overskrift", start: null, due: null,
+            children: [
+              { key: "HLT-5", summary: "Payment on account Q2", type: "Subtask", status: "To Do", start: null, due: "2026-04-30" },
+              { key: "HLT-6", summary: "Payment on account Q3", type: "Subtask", status: "To Do", start: null, due: "2026-07-10" },
+              { key: "HLT-7", summary: "Payment on account Q4 (new model)", type: "Subtask", status: "To Do", start: null, due: "2026-10-31" },
+            ]
+          },
+          {
+            key: "HLT-9", summary: "Ny Service Fee Metode — Udvikling & Implementering", type: "Main Story", status: "To Do", start: null, due: null,
+            children: [
+              { key: "HLT-11", summary: "Analyse af nuværende service fee struktur", type: "Subtask", status: "Done", start: null, due: "2026-05-15" },
+              { key: "HLT-12", summary: "Masterdata: Services & Service Buckets", type: "Subtask", status: "To Do", start: null, due: "2026-05-15" },
+              { key: "HLT-13", summary: "Masterdata: Company Buckets & Allokeringsnøgler", type: "Subtask", status: "To Do", start: null, due: "2026-05-15" },
+              { key: "HLT-14", summary: "Masterdata: Kontoklassificering & Department-translation", type: "Subtask", status: "To Do", start: null, due: "2026-05-31" },
+              { key: "HLT-15", summary: "Cost Base: Eksterne omkostninger — Monjasa Holding", type: "Subtask", status: "To Do", start: null, due: "2026-06-20" },
+              { key: "HLT-16", summary: "Cost Base: Løn omkostninger & HC-split metoder", type: "Subtask", status: "To Do", start: null, due: "2026-06-30" },
+              { key: "HLT-17", summary: "Cost Base: IC-costs, Mark-up & Shareholder beregning", type: "Subtask", status: "To Do", start: null, due: "2026-07-10" },
+              { key: "HLT-18", summary: "Allocation Keys: Dynamisk dataset & beregning", type: "Subtask", status: "To Do", start: "2026-06-20", due: "2026-07-10" },
+              { key: "HLT-19", summary: "Beregningsmotor: MVP Excel model — Monjasa Holding", type: "Subtask", status: "To Do", start: "2026-08-01", due: "2026-08-25" },
+              { key: "HLT-20", summary: "Integration: CAT1 & CAT2 selskaber (DMCC, CYB, MHQ)", type: "Subtask", status: "To Do", start: "2026-08-25", due: "2026-09-10" },
+              { key: "HLT-41", summary: "Validering & Impact-analyse: Ny vs. gammel model", type: "Subtask", status: "To Do", start: "2026-09-10", due: "2026-09-22" },
+              { key: "HLT-42", summary: "Godkendelse, dokumentation & go-live klar til Q4", type: "Subtask", status: "To Do", start: "2026-09-22", due: "2026-09-30" },
+            ]
+          }
+        ]
+      },
+      {
+        key: "HLT-2", summary: "Budget processen", type: "Epic", status: "To Do",
+        start: "2026-04-16", due: "2026-12-18",
+        children: [
+          {
+            key: "HLT-10", summary: "Budget Template Review med Regioner", type: "Main Story", status: "To Do", start: null, due: null,
+            children: [
+              { key: "HLT-21", summary: "Forbered templates og reviewmateriale", type: "Subtask", status: "To Do", start: null, due: "2026-04-30" },
+              { key: "HLT-22", summary: "Planlæg review-møder med alle regioner", type: "Subtask", status: "To Do", start: null, due: "2026-05-08" },
+              { key: "HLT-23", summary: "Gennemfør template review-sessioner med regioner", type: "Subtask", status: "To Do", start: null, due: "2026-05-22" },
+              { key: "HLT-24", summary: "Konsolidér feedback fra alle regioner", type: "Subtask", status: "To Do", start: null, due: "2026-05-29" },
+              { key: "HLT-25", summary: "Indarbejd ændringer i budget-templates", type: "Subtask", status: "To Do", start: null, due: "2026-06-12" },
+              { key: "HLT-26", summary: "Validér opdaterede templates med nøgleregioner", type: "Subtask", status: "To Do", start: null, due: "2026-06-19" },
+              { key: "HLT-27", summary: "Distribuér endelige templates til alle regioner", type: "Subtask", status: "To Do", start: null, due: "2026-06-26" },
+            ]
+          },
+          {
+            key: "HLT-44", summary: "Forecast 5+7 2026", type: "Main Story", status: "To Do", start: null, due: "2026-07-17",
+            children: []
+          },
+          {
+            key: "HLT-28", summary: "Forecast 9+3 2026 & Budget 2027 — Fuld budgetproces", type: "Main Story", status: "To Do", start: null, due: null,
+            children: [
+              { key: "HLT-29", summary: "Planning: Fastlæg tidsplan, deadlines og kommunikér til regioner & funktioner", type: "Subtask", status: "To Do", start: null, due: "2026-09-10" },
+              { key: "HLT-30", summary: "Templates & Prerequisites: Udvikl AFC-templates og fastlæg group-wide assumptions", type: "Subtask", status: "To Do", start: null, due: "2026-09-30" },
+              { key: "HLT-31", summary: "Template Testing: QA af Solitwork templates med nøgle-controllers", type: "Subtask", status: "To Do", start: null, due: "2026-09-24" },
+              { key: "HLT-32", summary: "Headcount: Koordinér FTE-budgettering med HR, regioner og group functions", type: "Subtask", status: "To Do", start: null, due: "2026-11-07" },
+              { key: "HLT-33", summary: "Estimate 9+3: Regioner udfylder forecast baseret på jan–sep actuals", type: "Subtask", status: "To Do", start: null, due: "2026-10-13" },
+              { key: "HLT-34", summary: "Preparation Regional: Regioner udfylder Budget 2027 i AFC-templates", type: "Subtask", status: "To Do", start: null, due: "2026-10-29" },
+              { key: "HLT-35", summary: "Budget Group Functions: Kick-off, input, review og godkendelse af funktionsbudgetter", type: "Subtask", status: "To Do", start: null, due: "2026-10-10" },
+              { key: "HLT-36", summary: "Service Fees: Draft, regional meetings, true-up og final distribution", type: "Subtask", status: "To Do", start: null, due: "2026-11-14" },
+              { key: "HLT-37", summary: "Presentation & Final Budget: Regioner forbereder og præsenterer budget", type: "Subtask", status: "To Do", start: null, due: "2026-10-29" },
+              { key: "HLT-38", summary: "Regional Meetings: 1-2 timers budget-møder med Group Management (CFO & CEO)", type: "Subtask", status: "To Do", start: null, due: "2026-11-07" },
+              { key: "HLT-39", summary: "Consolidation: Konsolidér regionale budgetter og forbered group-level præsentation", type: "Subtask", status: "To Do", start: null, due: "2026-11-14" },
+              { key: "HLT-40", summary: "BOD Material & Præsentation: Forbered og præsentér det endelige group budget for bestyrelsen", type: "Subtask", status: "To Do", start: null, due: "2026-12-03" },
+            ]
+          }
+        ]
+      },
+      {
+        key: "HLT-3", summary: "Dimension", type: "Epic", status: "To Do",
+        start: null, due: null,
+        children: [
+          {
+            key: "HLT-45", summary: "AFC Structure / Chart of Accounts — Redesign & Harmonisering", type: "Main Story", status: "To Do", start: null, due: "2026-09-30",
+            children: [
+              { key: "HLT-49", summary: "Indsaml og konsolidér eksisterende AFC-struktur & lokale CoA", type: "Subtask", status: "Done", start: null, due: "2026-05-15" },
+              { key: "HLT-50", summary: "Draft AFC branch-struktur (top-level + sub-branches)", type: "Subtask", status: "Done", start: null, due: "2026-05-31" },
+              { key: "HLT-51", summary: "Review-session: Henrik, Hajder & Tobias — alignment af struktur", type: "Subtask", status: "Done", start: null, due: "2026-06-15" },
+              { key: "HLT-52", summary: "Workshop med accountants & regioner — validér struktur & mapping", type: "Subtask", status: "Overskrift", start: null, due: null },
+              { key: "HLT-55", summary: "Workshop forberedelse: Agenda, materiale & invitationer", type: "Subtask", status: "To Do", start: null, due: "2026-06-30" },
+              { key: "HLT-56", summary: "Workshop: Americas (Panama) — validér AFC-mapping", type: "Subtask", status: "To Do", start: null, due: "2026-07-10" },
+              { key: "HLT-57", summary: "Workshop: DMCC / UAE — validér AFC-mapping", type: "Subtask", status: "To Do", start: "2026-08-01", due: "2026-08-08" },
+              { key: "HLT-58", summary: "Workshop: Singapore / Asia — validér AFC-mapping", type: "Subtask", status: "To Do", start: "2026-08-11", due: "2026-08-18" },
+              { key: "HLT-59", summary: "Workshop: NWE & Cyprus — validér AFC-mapping", type: "Subtask", status: "To Do", start: "2026-08-19", due: "2026-08-26" },
+              { key: "HLT-60", summary: "Konsolidér feedback fra alle regioner & afklar konflikter", type: "Subtask", status: "To Do", start: "2026-08-27", due: "2026-09-08" },
+              { key: "HLT-53", summary: "Mapping: Lokale konti → ny AFC-struktur (pr. selskab)", type: "Subtask", status: "Done", start: "2026-09-09", due: "2026-09-22" },
+              { key: "HLT-54", summary: "Implementér ny AFC-struktur i system & udrulning", type: "Subtask", status: "Done", start: "2026-09-23", due: "2026-09-30" },
+            ]
+          },
+          { key: "HLT-46", summary: "Continia Expense Type Standardisering", type: "Main Story", status: "To Do", start: null, due: null, children: [] },
+          { key: "HLT-47", summary: "Dept/Team/Location Automation — Approval App Lookup", type: "Main Story", status: "To Do", start: null, due: null, children: [] },
+          { key: "HLT-48", summary: "ERP Tags vs. Dimensions — Konceptevaluering", type: "Main Story", status: "To Do", start: null, due: null, children: [] },
+        ]
+      },
+      {
+        key: "HLT-61", summary: "Sommerferie", type: "Epic", status: "Overskrift",
+        start: "2026-07-13", due: "2026-07-31",
+        children: []
+      },
+    ];
+
+    const epicBarColors = ["#7c3aed", "#2563eb", "#059669", "#dc2626", "#d97706"];
+
+    /* ─── Helpers ─── */
+    function parseDate(d) { return d ? new Date(d + "T00:00:00") : null; }
+    function daysBetween(a, b) { return Math.round((b - a) / 86400000); }
+    function fmtDate(d) {
+      if (!d) return "\u2014";
+      return new Date(d).toLocaleDateString("da-DK", { day: "numeric", month: "short", year: "numeric" });
+    }
+
+    function flattenForGantt(items, parentStart, parentDue, epicColor, depth) {
+      const rows = [];
+      items.forEach((item) => {
+        const s = parseDate(item.start) || parentStart;
+        const d = parseDate(item.due) || parentDue;
+        rows.push({ ...item, resolvedStart: s, resolvedDue: d, depth, epicColor });
+        if (item.children && item.children.length > 0) {
+          rows.push(...flattenForGantt(item.children, s, d, epicColor, depth + 1));
+        }
+      });
+      return rows;
+    }
+
+    /* ─── Status & Type Badges ─── */
+    const statusStyles = {
+      "To Do":      { bg: "#dbeafe", text: "#1d4ed8", border: "#bfdbfe" },
+      "In Progress":{ bg: "#fef3c7", text: "#b45309", border: "#fde68a" },
+      "Done":       { bg: "#d1fae5", text: "#047857", border: "#a7f3d0" },
+      "Overskrift": { bg: "#ede9fe", text: "#6d28d9", border: "#ddd6fe" },
+    };
+    const typeColors = {
+      Epic: "#7c3aed", Story: "#059669", "Main Story": "#2563eb", Subtask: "#6b7280",
+    };
+
+    function StatusBadge({ status }) {
+      const s = statusStyles[status] || statusStyles["To Do"];
+      return (
+        <span style={{ background: s.bg, color: s.text, border: `1px solid ${s.border}`, padding: "2px 10px", borderRadius: 20, fontSize: 11, fontWeight: 600, whiteSpace: "nowrap" }}>
+          {status}
+        </span>
+      );
+    }
+
+    function TypeBadge({ type }) {
+      return (
+        <span style={{ background: typeColors[type] || "#6b7280", color: "white", padding: "2px 8px", borderRadius: 4, fontSize: 11, fontWeight: 600, whiteSpace: "nowrap" }}>
+          {type}
+        </span>
+      );
+    }
+
+    /* ─── Gantt Timeline ─── */
+    function GanttTimeline({ showSubtasks }) {
+      const today = new Date("2026-04-17");
+
+      const rows = useMemo(() => {
+        const all = [];
+        jiraData.forEach((epic, i) => {
+          const s = parseDate(epic.start);
+          const d = parseDate(epic.due);
+          all.push({ ...epic, resolvedStart: s, resolvedDue: d, depth: 0, epicColor: epicBarColors[i] });
+          if (epic.children && epic.children.length > 0) {
+            all.push(...flattenForGantt(epic.children, s, d, epicBarColors[i], 1));
+          }
+        });
+        return showSubtasks ? all : all.filter(r => r.type !== "Subtask");
+      }, [showSubtasks]);
+
+      const allDated = rows.filter(r => r.resolvedStart && r.resolvedDue);
+      const timelineStart = allDated.length > 0 ? new Date(Math.min(...allDated.map(r => r.resolvedStart.getTime()))) : today;
+      const timelineEnd = allDated.length > 0 ? new Date(Math.max(...allDated.map(r => r.resolvedDue.getTime()))) : new Date(today.getTime() + 270 * 86400000);
+      const totalDays = daysBetween(timelineStart, timelineEnd) || 1;
+
+      const months = [];
+      const cursor = new Date(timelineStart.getFullYear(), timelineStart.getMonth(), 1);
+      while (cursor <= timelineEnd) {
+        const mStart = new Date(cursor);
+        cursor.setMonth(cursor.getMonth() + 1);
+        const mEnd = new Date(cursor);
+        const left = Math.max(0, daysBetween(timelineStart, mStart) / totalDays * 100);
+        const right = Math.min(100, daysBetween(timelineStart, mEnd) / totalDays * 100);
+        months.push({ label: mStart.toLocaleDateString("da-DK", { month: "short" }), left, width: right - left });
+      }
+
+      const todayPct = daysBetween(timelineStart, today) / totalDays * 100;
+      const LABEL_W = 320;
+      const ROW_H = 44;
+
+      return (
+        <div style={{ background: "white", borderRadius: 16, border: "1px solid #e5e7eb", overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
+          {/* Header */}
+          <div style={{ display: "flex", borderBottom: "1px solid #e5e7eb", background: "#f9fafb" }}>
+            <div style={{ width: LABEL_W, minWidth: LABEL_W, padding: "12px 16px", fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: 1, borderRight: "1px solid #e5e7eb" }}>
+              Issue
+            </div>
+            <div style={{ flex: 1, display: "flex", minWidth: 500, overflow: "hidden" }}>
+              {months.map((m, i) => (
+                <div key={i} style={{ width: m.width + "%", padding: "12px 0", fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", textAlign: "center", borderRight: "1px solid #f3f4f6", letterSpacing: 0.5 }}>
+                  {m.label}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Body */}
+          <div style={{ position: "relative", overflowX: "auto" }}>
+            {rows.map((row, idx) => {
+              const hasBar = row.resolvedStart && row.resolvedDue;
+              const barLeft = hasBar ? (daysBetween(timelineStart, row.resolvedStart) / totalDays * 100) : 0;
+              const barWidth = hasBar ? (daysBetween(row.resolvedStart, row.resolvedDue) / totalDays * 100) : 0;
+              const isEpic = row.type === "Epic";
+              const barColor = isEpic ? row.epicColor : (row.epicColor + "88");
+              const barH = isEpic ? 22 : 14;
+              const barR = isEpic ? 6 : 10;
+
+              return (
+                <div key={row.key} className="gantt-row" style={{ display: "flex", alignItems: "center", height: ROW_H, borderBottom: "1px solid #f9fafb", background: isEpic ? "#fafafa" : "transparent" }}>
+                  {/* Label */}
+                  <div style={{ width: LABEL_W, minWidth: LABEL_W, paddingLeft: 16 + row.depth * 24, paddingRight: 12, display: "flex", alignItems: "center", gap: 8, borderRight: "1px solid #e5e7eb", overflow: "hidden" }}>
+                    {isEpic && <span style={{ color: row.epicColor, flexShrink: 0, display: "flex" }}><Icons.Layers /></span>}
+                    {row.depth === 2 && <span style={{ width: 6, height: 6, borderRadius: 3, background: "#d1d5db", flexShrink: 0 }} />}
+                    <span style={{ fontSize: 11, fontFamily: "monospace", color: "#9ca3af", flexShrink: 0 }}>{row.key}</span>
+                    <span style={{ fontSize: 13, color: isEpic ? "#111827" : "#374151", fontWeight: isEpic ? 700 : 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {row.summary}
+                    </span>
+                  </div>
+
+                  {/* Bar area */}
+                  <div style={{ flex: 1, position: "relative", height: "100%", display: "flex", alignItems: "center", minWidth: 500 }}>
+                    {/* Month grid lines */}
+                    {months.map((m, i) => (
+                      <div key={i} style={{ position: "absolute", left: m.left + "%", top: 0, bottom: 0, borderRight: "1px solid #f3f4f6" }} />
+                    ))}
+
+                    {hasBar ? (
+                      <div
+                        className="gantt-bar"
+                        style={{
+                          position: "absolute",
+                          left: barLeft + "%",
+                          width: Math.max(barWidth, 0.5) + "%",
+                          height: barH,
+                          background: barColor,
+                          borderRadius: barR,
+                          boxShadow: isEpic ? "0 2px 6px rgba(0,0,0,0.15)" : "none",
+                          cursor: "pointer",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          overflow: "hidden",
+                        }}
+                        title={`${row.key}: ${row.summary}\n${fmtDate(row.resolvedStart.toISOString().slice(0,10))} \u2192 ${fmtDate(row.resolvedDue.toISOString().slice(0,10))}`}
+                      >
+                        {barWidth > 10 && isEpic && (
+                          <span style={{ color: "white", fontSize: 11, fontWeight: 700, padding: "0 8px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                            {row.summary}
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      <div style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        <span style={{ fontSize: 11, color: "#d1d5db", fontStyle: "italic" }}>Ingen datoer</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* Today line */}
+            {todayPct >= 0 && todayPct <= 100 && (
+              <div style={{ position: "absolute", top: 0, bottom: 0, left: `calc(${LABEL_W}px + (100% - ${LABEL_W}px) * ${todayPct / 100})`, zIndex: 20, pointerEvents: "none" }}>
+                <div style={{ width: 2, height: "100%", background: "#ef4444", opacity: 0.5 }} />
+                <div className="today-label" style={{ position: "absolute", top: 0, transform: "translateX(-50%)", background: "#ef4444", color: "white", padding: "2px 6px", borderRadius: "0 0 4px 4px", fontWeight: 600 }}>
+                  I dag
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Legend */}
+          <div style={{ display: "flex", alignItems: "center", gap: 24, padding: "12px 16px", borderTop: "1px solid #f3f4f6", background: "#f9fafb", flexWrap: "wrap" }}>
+            {jiraData.map((epic, i) => (
+              <div key={epic.key} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <div style={{ width: 12, height: 12, borderRadius: 3, background: epicBarColors[i] }} />
+                <span style={{ fontSize: 11, color: "#6b7280" }}>{epic.summary}</span>
+              </div>
+            ))}
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: "auto" }}>
+              <div style={{ width: 16, height: 2, background: "#ef4444", opacity: 0.5 }} />
+              <span style={{ fontSize: 11, color: "#6b7280" }}>I dag</span>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    /* ─── Hierarchy View ─── */
+    function SubtaskRow({ item }) {
+      return (
+        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 16px", marginLeft: 48, borderLeft: "2px solid #e5e7eb" }}>
+          <span style={{ width: 6, height: 6, borderRadius: 3, background: "#d1d5db", flexShrink: 0 }} />
+          <span style={{ fontSize: 11, fontFamily: "monospace", color: "#9ca3af", minWidth: 50 }}>{item.key}</span>
+          <TypeBadge type={item.type} />
+          <span style={{ fontSize: 13, color: "#374151", flex: 1 }}>{item.summary}</span>
+          <StatusBadge status={item.status} />
+        </div>
+      );
+    }
+
+    function TaskRow({ item }) {
+      const [expanded, setExpanded] = useState(true);
+      const hasChildren = item.children && item.children.length > 0;
+      return (
+        <div>
+          <div
+            onClick={() => hasChildren && setExpanded(!expanded)}
+            style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", marginLeft: 16, cursor: hasChildren ? "pointer" : "default", borderRadius: 8 }}
+            className="gantt-row"
+          >
+            {hasChildren ? (expanded ? <Icons.ChevronDown /> : <Icons.ChevronRight />) : <span style={{ width: 16 }} />}
+            <span style={{ fontSize: 11, fontFamily: "monospace", color: "#9ca3af", minWidth: 50 }}>{item.key}</span>
+            <TypeBadge type={item.type} />
+            <span style={{ fontSize: 13, color: "#374151", flex: 1, fontWeight: 600 }}>{item.summary}</span>
+            <span style={{ fontSize: 11, color: "#9ca3af" }}>{fmtDate(item.start)} → {fmtDate(item.due)}</span>
+            <StatusBadge status={item.status} />
+            {hasChildren && <span style={{ fontSize: 11, color: "#9ca3af", background: "#f3f4f6", padding: "2px 8px", borderRadius: 12 }}>{item.children.length}</span>}
+          </div>
+          {expanded && hasChildren && item.children.map(c => <SubtaskRow key={c.key} item={c} />)}
+        </div>
+      );
+    }
+
+    function EpicCard({ epic, color }) {
+      const [expanded, setExpanded] = useState(true);
+      const total = epic.children.reduce((a, c) => a + 1 + (c.children ? c.children.length : 0), 0);
+      return (
+        <div className="epic-card" style={{ background: "white", borderRadius: 16, border: "1px solid #e5e7eb", overflow: "hidden", marginBottom: 24 }}>
+          <div
+            onClick={() => setExpanded(!expanded)}
+            style={{ display: "flex", alignItems: "center", gap: 16, padding: 20, cursor: "pointer", background: `linear-gradient(135deg, ${color}08 0%, white 100%)`, borderBottom: "1px solid #f3f4f6" }}
+          >
+            <div style={{ width: 40, height: 40, borderRadius: 12, background: color + "18", display: "flex", alignItems: "center", justifyContent: "center", color }}>
+              <Icons.Layers />
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                <span style={{ fontSize: 11, fontFamily: "monospace", fontWeight: 700, color }}>{epic.key}</span>
+                <TypeBadge type="Epic" />
+              </div>
+              <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "#111827" }}>{epic.summary}</h3>
+            </div>
+            <div style={{ textAlign: "right" }}>
+              <div style={{ fontSize: 11, color: "#9ca3af", marginBottom: 4 }}>{fmtDate(epic.start)} → {fmtDate(epic.due)}</div>
+              <StatusBadge status={epic.status} />
+            </div>
+            <div style={{ textAlign: "center", marginLeft: 12 }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: "#374151" }}>{total}</div>
+              <div style={{ fontSize: 10, color: "#9ca3af" }}>items</div>
+            </div>
+            {expanded ? <Icons.ChevronDown size={20} /> : <Icons.ChevronRight size={20} />}
+          </div>
+          {expanded && (
+            <div style={{ padding: "8px 0" }}>
+              {epic.children.length === 0 ? (
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 32, color: "#9ca3af", gap: 8 }}>
+                  <Icons.AlertCircle /> <span style={{ fontSize: 13 }}>Ingen tasks endnu</span>
+                </div>
+              ) : epic.children.map(c => <TaskRow key={c.key} item={c} />)}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    /* ─── Helpers: flatten all tasks ─── */
+    function flattenAll(items, epicKey, epicColor) {
+      const result = [];
+      items.forEach(item => {
+        result.push({ ...item, epicKey, epicColor });
+        if (item.children) result.push(...flattenAll(item.children, epicKey, epicColor));
+      });
+      return result;
+    }
+
+    /* ─── Stats ─── */
+    function StatsBar() {
+      const counts = { epics: 0, stories: 0, subtasks: 0, total: 0 };
+      function count(items) {
+        items.forEach(item => {
+          counts.total++;
+          if (item.type === "Epic") counts.epics++;
+          else if (item.type === "Story" || item.type === "Main Story") counts.stories++;
+          else if (item.type === "Subtask") counts.subtasks++;
+          if (item.children) count(item.children);
+        });
+      }
+      count(jiraData);
+
+      const stats = [
+        { label: "Epics", value: counts.epics, color: "#7c3aed", bg: "#f5f3ff" },
+        { label: "Stories / Tasks", value: counts.stories, color: "#2563eb", bg: "#eff6ff" },
+        { label: "Subtasks", value: counts.subtasks, color: "#6b7280", bg: "#f3f4f6" },
+        { label: "Total", value: counts.total, color: "#059669", bg: "#ecfdf5" },
+      ];
+
+      return (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 32 }}>
+          {stats.map(s => (
+            <div key={s.label} className="stat-card" style={{ background: s.bg, borderRadius: 12, padding: 16, display: "flex", alignItems: "center", gap: 12 }}>
+              <div>
+                <div style={{ fontSize: 28, fontWeight: 800, color: s.color }}>{s.value}</div>
+                <div style={{ fontSize: 11, color: "#6b7280" }}>{s.label}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    /* ─── Progress Dashboard ─── */
+    function ProgressDashboard() {
+      const today = new Date("2026-04-17");
+      const workEpics = jiraData.filter(e => e.key !== "HLT-61");
+
+      const epicStats = workEpics.map((epic, i) => {
+        const all = flattenAll(epic.children || [], epic.key, epicBarColors[i]);
+        const tasks = all.filter(t => t.type === "Subtask" && t.status !== "Overskrift");
+        const done = tasks.filter(t => t.status === "Done").length;
+        const inProg = tasks.filter(t => t.status === "In Progress").length;
+        const todo = tasks.filter(t => t.status === "To Do").length;
+        const total = tasks.length;
+        const pct = total > 0 ? Math.round(done / total * 100) : 0;
+
+        const epicStart = parseDate(epic.start);
+        const epicDue = parseDate(epic.due);
+        const totalDays = epicStart && epicDue ? daysBetween(epicStart, epicDue) : 1;
+        const elapsed = epicStart ? daysBetween(epicStart, today) : 0;
+        const timePct = totalDays > 0 ? Math.min(100, Math.max(0, Math.round(elapsed / totalDays * 100))) : 0;
+
+        return { epic, color: epicBarColors[i], done, inProg, todo, total, pct, timePct };
+      });
+
+      const totalAll = epicStats.reduce((a, e) => a + e.total, 0);
+      const doneAll = epicStats.reduce((a, e) => a + e.done, 0);
+      const overallPct = totalAll > 0 ? Math.round(doneAll / totalAll * 100) : 0;
+
+      return (
+        <div style={{ marginBottom: 32 }}>
+          {/* Overall progress */}
+          <div style={{ background: "white", borderRadius: 16, border: "1px solid #e5e7eb", padding: 24, marginBottom: 20 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: "#111827" }}>Samlet fremgang</h3>
+              <span style={{ fontSize: 28, fontWeight: 800, color: "#7c3aed" }}>{overallPct}%</span>
+            </div>
+            <div style={{ height: 12, background: "#f3f4f6", borderRadius: 6, overflow: "hidden" }}>
+              <div style={{ height: "100%", width: overallPct + "%", background: "linear-gradient(90deg, #7c3aed, #a78bfa)", borderRadius: 6, transition: "width 0.5s" }} />
+            </div>
+            <div style={{ display: "flex", gap: 24, marginTop: 12, fontSize: 12, color: "#6b7280" }}>
+              <span><strong style={{ color: "#047857" }}>{doneAll}</strong> færdige</span>
+              <span><strong style={{ color: "#b45309" }}>{totalAll - doneAll}</strong> resterende</span>
+              <span><strong>{totalAll}</strong> total</span>
+            </div>
+          </div>
+
+          {/* Per-epic progress */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 16 }}>
+            {epicStats.map(es => (
+              <div key={es.epic.key} style={{ background: "white", borderRadius: 16, border: "1px solid #e5e7eb", padding: 20 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
+                  <div style={{ width: 8, height: 40, borderRadius: 4, background: es.color }} />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 11, fontFamily: "monospace", color: "#9ca3af" }}>{es.epic.key}</div>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: "#111827" }}>{es.epic.summary}</div>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <div style={{ fontSize: 24, fontWeight: 800, color: es.color }}>{es.pct}%</div>
+                    <div style={{ fontSize: 11, color: "#9ca3af" }}>{es.done} / {es.total} tasks</div>
+                  </div>
+                </div>
+
+                {/* Task progress bar */}
+                <div style={{ marginBottom: 8 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#6b7280", marginBottom: 4 }}>
+                    <span>Opgave-fremgang</span>
+                    <span>{es.done} færdige · {es.inProg} i gang · {es.todo} to do</span>
+                  </div>
+                  <div style={{ height: 10, background: "#f3f4f6", borderRadius: 5, overflow: "hidden", display: "flex" }}>
+                    {es.done > 0 && <div style={{ width: (es.done / es.total * 100) + "%", background: "#10b981", transition: "width 0.3s" }} />}
+                    {es.inProg > 0 && <div style={{ width: (es.inProg / es.total * 100) + "%", background: "#f59e0b", transition: "width 0.3s" }} />}
+                  </div>
+                </div>
+
+                {/* Time progress bar */}
+                <div>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#6b7280", marginBottom: 4 }}>
+                    <span>Tid forbrugt</span>
+                    <span>{fmtDate(es.epic.start)} → {fmtDate(es.epic.due)} ({es.timePct}%)</span>
+                  </div>
+                  <div style={{ height: 10, background: "#f3f4f6", borderRadius: 5, overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: es.timePct + "%", background: es.pct >= es.timePct ? "#60a5fa" : "#f87171", borderRadius: 5, transition: "width 0.3s" }} />
+                  </div>
+                </div>
+
+                {/* Burndown indicator */}
+                {es.total > 0 && (
+                  <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 8 }}>
+                    <div style={{ width: 8, height: 8, borderRadius: 4, background: es.pct >= es.timePct ? "#10b981" : "#f87171" }} />
+                    <span style={{ fontSize: 11, color: es.pct >= es.timePct ? "#047857" : "#dc2626", fontWeight: 600 }}>
+                      {es.pct >= es.timePct ? "På sporet — fremgang matcher tidsforløb" : "Bag tidsplan — fremgang halter efter tidsforløb"}
+                    </span>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    /* ─── Næste 14 Dage View ─── */
+    function UpcomingView() {
+      const today = new Date("2026-04-17");
+      const in14 = new Date(today.getTime() + 14 * 86400000);
+      const workEpics = jiraData.filter(e => e.key !== "HLT-61");
+
+      const epicGroups = workEpics.map((epic, i) => {
+        const all = flattenAll(epic.children || [], epic.key, epicBarColors[i]);
+        const upcoming = all.filter(t => {
+          if (t.type === "Epic" || t.type === "Main Story" || t.status === "Overskrift" || t.status === "Done") return false;
+          const start = parseDate(t.start);
+          const due = parseDate(t.due);
+          if (!start && !due) return false;
+          /* Task is relevant if it starts within 14 days, or is already started and due within 14 days, or is currently active (started before today, due after today) */
+          const startsInWindow = start && start <= in14 && start >= today;
+          const dueInWindow = due && due <= in14 && due >= today;
+          const activeNow = start && due && start <= today && due >= today;
+          return startsInWindow || dueInWindow || activeNow;
+        });
+        return { epic, color: epicBarColors[i], tasks: upcoming };
+      }).filter(g => g.tasks.length > 0);
+
+      if (epicGroups.length === 0) {
+        return (
+          <div style={{ background: "white", borderRadius: 16, border: "1px solid #e5e7eb", padding: 48, textAlign: "center" }}>
+            <div style={{ fontSize: 40, marginBottom: 12 }}>&#9745;</div>
+            <div style={{ fontSize: 16, fontWeight: 600, color: "#374151" }}>Ingen opgaver de næste 14 dage</div>
+            <div style={{ fontSize: 13, color: "#9ca3af", marginTop: 4 }}>Alt er planlagt til at starte senere.</div>
+          </div>
+        );
+      }
+
+      function daysUntil(dateStr) {
+        const d = parseDate(dateStr);
+        if (!d) return null;
+        const diff = daysBetween(today, d);
+        if (diff < 0) return "Overskredet";
+        if (diff === 0) return "I dag";
+        if (diff === 1) return "I morgen";
+        return diff + " dage";
+      }
+
+      function urgencyColor(dateStr) {
+        const d = parseDate(dateStr);
+        if (!d) return "#6b7280";
+        const diff = daysBetween(today, d);
+        if (diff < 0) return "#dc2626";
+        if (diff <= 3) return "#f59e0b";
+        if (diff <= 7) return "#3b82f6";
+        return "#6b7280";
+      }
+
+      return (
+        <div>
+          {epicGroups.map(g => (
+            <div key={g.epic.key} style={{ background: "white", borderRadius: 16, border: "1px solid #e5e7eb", overflow: "hidden", marginBottom: 20 }}>
+              {/* Epic header */}
+              <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "16px 20px", background: `linear-gradient(135deg, ${g.color}08 0%, white 100%)`, borderBottom: "1px solid #f3f4f6" }}>
+                <div style={{ width: 6, height: 32, borderRadius: 3, background: g.color }} />
+                <span style={{ fontSize: 11, fontFamily: "monospace", color: g.color, fontWeight: 700 }}>{g.epic.key}</span>
+                <span style={{ fontSize: 15, fontWeight: 700, color: "#111827" }}>{g.epic.summary}</span>
+                <span style={{ marginLeft: "auto", fontSize: 12, color: "#6b7280", background: "#f3f4f6", padding: "4px 10px", borderRadius: 12 }}>
+                  {g.tasks.length} opgave{g.tasks.length > 1 ? "r" : ""}
+                </span>
+              </div>
+
+              {/* Tasks */}
+              <div style={{ padding: "8px 0" }}>
+                {g.tasks.map(t => {
+                  const deadlineLabel = daysUntil(t.due);
+                  const uColor = urgencyColor(t.due);
+                  const isActive = parseDate(t.start) && parseDate(t.start) <= today;
+                  return (
+                    <div key={t.key} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 20px", borderBottom: "1px solid #fafafa" }}>
+                      {isActive && <div style={{ width: 8, height: 8, borderRadius: 4, background: "#f59e0b", boxShadow: "0 0 6px #f59e0b55" }} />}
+                      {!isActive && <div style={{ width: 8, height: 8, borderRadius: 4, background: "#e5e7eb" }} />}
+                      <span style={{ fontSize: 11, fontFamily: "monospace", color: "#9ca3af", minWidth: 50 }}>{t.key}</span>
+                      <span style={{ fontSize: 13, color: "#374151", flex: 1 }}>{t.summary}</span>
+                      <span style={{ fontSize: 11, color: "#9ca3af" }}>{fmtDate(t.start)} → {fmtDate(t.due)}</span>
+                      <StatusBadge status={t.status} />
+                      {deadlineLabel && (
+                        <span style={{ fontSize: 11, fontWeight: 600, color: uColor, background: uColor + "15", padding: "2px 8px", borderRadius: 8, whiteSpace: "nowrap" }}>
+                          {deadlineLabel}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    /* ─── Main App ─── */
+    function App() {
+      const [view, setView] = useState("upcoming");
+      const [showSubtasks, setShowSubtasks] = useState(true);
+
+      const btnBase = { display: "flex", alignItems: "center", gap: 6, padding: "8px 12px", borderRadius: 8, fontSize: 12, fontWeight: 600, border: "none", cursor: "pointer", transition: "all 0.15s" };
+      const viewBtn = (id, icon, label) => (
+        <button
+          onClick={() => setView(id)}
+          className={view === id ? "view-btn-active" : ""}
+          style={{ ...btnBase, background: view === id ? "white" : "transparent", color: view === id ? "#6d28d9" : "#6b7280", boxShadow: view === id ? "0 1px 3px rgba(0,0,0,0.1)" : "none" }}
+        >
+          {icon} {label}
+        </button>
+      );
+
+      return (
+        <div style={{ minHeight: "100vh" }}>
+          {/* Top Bar */}
+          <div style={{ background: "white", borderBottom: "1px solid #e5e7eb", position: "sticky", top: 0, zIndex: 30 }}>
+            <div style={{ maxWidth: 1200, margin: "0 auto", padding: "16px 24px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{ width: 40, height: 40, borderRadius: 12, background: "#7c3aed", display: "flex", alignItems: "center", justifyContent: "center", color: "white" }}>
+                  <Icons.Layers />
+                </div>
+                <div>
+                  <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: "#111827" }}>Lycke EPIC</h1>
+                  <p style={{ margin: 0, fontSize: 12, color: "#6b7280" }}>Projekt HLT — Jira Overblik</p>
+                </div>
+              </div>
+
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                {view === "gantt" && (
+                  <button
+                    className="subtask-toggle"
+                    onClick={() => setShowSubtasks(!showSubtasks)}
+                    style={{ ...btnBase, background: showSubtasks ? "#ede9fe" : "#f3f4f6", color: showSubtasks ? "#6d28d9" : "#6b7280" }}
+                  >
+                    {showSubtasks ? <Icons.Eye /> : <Icons.EyeOff />} Subtasks
+                  </button>
+                )}
+
+                <div style={{ display: "flex", background: "#f3f4f6", borderRadius: 8, padding: 4 }}>
+                  {viewBtn("upcoming", <Icons.AlertCircle />, "Næste 14 dage")}
+                  {viewBtn("progress", <Icons.BarChart />, "Fremgang")}
+                  {viewBtn("gantt", <Icons.Calendar />, "Gantt")}
+                  {viewBtn("list", <Icons.List />, "Hierarki")}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Content */}
+          <div style={{ maxWidth: 1200, margin: "0 auto", padding: "32px 24px" }}>
+            <StatsBar />
+
+            {view === "upcoming" && <UpcomingView />}
+            {view === "progress" && <ProgressDashboard />}
+            {view === "gantt" && <GanttTimeline showSubtasks={showSubtasks} />}
+            {view === "list" && jiraData.filter(e => e.key !== "HLT-61").map((epic, i) => <EpicCard key={epic.key} epic={epic} color={epicBarColors[i]} />)}
+
+            <div style={{ marginTop: 32, textAlign: "center", fontSize: 11, color: "#9ca3af" }}>
+              Sidst opdateret: {new Date().toLocaleDateString("da-DK", { day: "numeric", month: "long", year: "numeric" })}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.render(<App />, document.getElementById("root"));
+  </script>
+</body>
+</html>
